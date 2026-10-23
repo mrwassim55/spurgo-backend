@@ -46,6 +46,114 @@ export class UsersService implements OnModuleInit {
         .execute();
       await this.configRepository.save({ key: migrationKey, value: 'true' });
     }
+
+    await this.seedDefaultUsers();
+  }
+
+  private async seedDefaultUsers(): Promise<void> {
+    const defaultPassword = 'password123';
+    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+
+    const seedList: Partial<User>[] = [
+      {
+        email: 'admin@spurgo.io',
+        fullName: 'Admin Spurgo',
+        role: UserRole.ADMIN,
+        phoneNumber: '+218910000001',
+        whatsapp: '+218910000001',
+        points: 9999,
+        isApproved: true,
+        isEmailVerified: true,
+      },
+      {
+        email: 'moderator@spurgo.io',
+        fullName: 'Moderator Spurgo',
+        role: UserRole.MODERATOR,
+        phoneNumber: '+218910000002',
+        whatsapp: '+218910000002',
+        points: 5000,
+        isApproved: true,
+        isEmailVerified: true,
+      },
+      {
+        email: 'staff@spurgo.io',
+        fullName: 'Staff Spurgo',
+        role: UserRole.STAFF,
+        phoneNumber: '+218910000003',
+        whatsapp: '+218910000003',
+        points: 5000,
+        isApproved: true,
+        isEmailVerified: true,
+      },
+      {
+        email: 'supplier@spurgo.io',
+        fullName: 'Pro Auto Supplier',
+        role: UserRole.SUPPLIER,
+        companyName: 'Spurgo Auto Parts Co.',
+        specializations: 'German, Japanese, Korean, American',
+        taxId: 'TAX-SPURGO-SUPPLIER-01',
+        phoneNumber: '+218910000004',
+        whatsapp: '+218910000004',
+        points: 2000,
+        isApproved: true,
+        isEmailVerified: true,
+        verificationStatus: 'approved',
+      },
+      {
+        email: 'customer@spurgo.io',
+        fullName: 'Spurgo Customer',
+        role: UserRole.CUSTOMER,
+        phoneNumber: '+218910000005',
+        whatsapp: '+218910000005',
+        points: 1000,
+        isApproved: true,
+        isEmailVerified: true,
+      },
+      {
+        email: 'wassim.benchaoua@gmail.com',
+        fullName: 'Wassim Benchaoua',
+        role: UserRole.CUSTOMER,
+        phoneNumber: '+21699000001',
+        whatsapp: '+21699000001',
+        points: 1000,
+        isApproved: true,
+        isEmailVerified: true,
+      },
+      {
+        email: 'bahaa.kafo@gmail.com',
+        fullName: 'Bahaa Kafo',
+        role: UserRole.CUSTOMER,
+        phoneNumber: '+218910000006',
+        whatsapp: '+218910000006',
+        points: 1000,
+        isApproved: true,
+        isEmailVerified: true,
+      },
+    ];
+
+    for (const item of seedList) {
+      try {
+        const existing = await this.usersRepository.findOne({
+          where: { email: item.email },
+        });
+        if (!existing) {
+          const user = this.usersRepository.create({
+            ...item,
+            password: hashedPassword,
+            isActive: true,
+          });
+          await this.usersRepository.save(user);
+        } else {
+          existing.password = hashedPassword;
+          existing.isApproved = true;
+          existing.isEmailVerified = true;
+          existing.isActive = true;
+          await this.usersRepository.save(existing);
+        }
+      } catch (err) {
+        console.error(`Failed to seed user ${item.email}:`, err);
+      }
+    }
   }
 
   private async ensureConfig(key: string, defaultValue: string): Promise<void> {
