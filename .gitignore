@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.db
+*.db.backup
+scratch/
+.env
+cloudflared*
+firebase-service-account*.json
+uploads/*
+!uploads/.gitkeep
