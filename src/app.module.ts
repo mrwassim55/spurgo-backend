@@ -20,14 +20,15 @@ import { PaymentsModule } from './modules/payments/payments.module';
       useFactory: () => {
         const url = process.env.DATABASE_URL;
         if (url) {
+          const useSsl =
+            process.env.DB_SSL === 'true' ||
+            (url.includes('sslmode=require') && !url.includes('sslmode=disable'));
           return {
             type: 'postgres',
             url: url,
             entities: [__dirname + '/**/*.entity{.ts,.js}'],
             synchronize: true,
-            ssl: {
-              rejectUnauthorized: false,
-            },
+            ssl: useSsl ? { rejectUnauthorized: false } : false,
           };
         }
 
