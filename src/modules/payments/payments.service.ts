@@ -49,7 +49,7 @@ export class PaymentsService implements OnModuleInit {
         nameEn: 'Normal search',
         nameAr: 'البحث العادي',
         price: 10,
-        sortOrder: 10,
+        sortOrder: 1,
         featuresEn: [
           'Unlock the store details of one offer',
           'Search direct marketplace listings',
@@ -66,7 +66,8 @@ export class PaymentsService implements OnModuleInit {
         nameEn: 'Smart search',
         nameAr: 'البحث الذكي',
         price: 20,
-        sortOrder: 11,
+        sortOrder: 2,
+        isPopular: true,
         featuresEn: [
           'Unlock the store details of one offer',
           'Advanced compatibility matching across store network',
@@ -86,17 +87,17 @@ export class PaymentsService implements OnModuleInit {
         const existing = await this.planRepository.findOne({ where: { planId: plan.planId } });
         if (!existing) {
           await this.planRepository.save(
-            this.planRepository.create({ ...plan, currency: 'LYD', points: 0, isPopular: false, isActive: true }),
+            this.planRepository.create({ ...plan, currency: 'LYD', points: 0, isPopular: plan.isPopular ?? false, isActive: true }),
           );
-        } else if (
-          existing.featuresAr?.some((f: string) => f.includes('التفاصيل تحدد لاحقاً')) ||
-          (existing.featuresAr && existing.featuresAr.length <= 1)
-        ) {
+        } else {
           existing.featuresAr = plan.featuresAr;
           existing.featuresEn = plan.featuresEn;
           existing.nameAr = plan.nameAr;
           existing.nameEn = plan.nameEn;
           existing.price = plan.price;
+          existing.currency = 'LYD';
+          existing.sortOrder = plan.sortOrder;
+          existing.isPopular = plan.isPopular ?? false;
           await this.planRepository.save(existing);
         }
       }
@@ -107,58 +108,66 @@ export class PaymentsService implements OnModuleInit {
 
   private async seedDefaultPlansIfNeeded() {
     try {
-      const count = await this.planRepository.count();
-      if (count === 0) {
-        this.logger.log('Seeding initial payment plans into database...');
-        const initialPlans = [
-          {
-            planId: 'basic',
-            nameEn: 'Basic Plan',
-            nameAr: 'الباقة الأساسية',
-            price: 9.99,
-            currency: 'USD',
-            points: 100,
-            isPopular: false,
-            isActive: true,
-            featuresEn: ['Search accessory parts', 'Standard email support', '100 Reward Points'],
-            featuresAr: ['البحث عن قطع الإكسسوارات', 'الدعم الفني Standard', '100 نقطة مكافأة'],
-            sortOrder: 1,
-          },
-          {
-            planId: 'pro',
-            nameEn: 'Pro Plan',
-            nameAr: 'الباقة الاحترافية',
-            price: 19.99,
-            currency: 'USD',
-            points: 250,
-            isPopular: true,
-            isActive: true,
-            featuresEn: ['Priority request listing', '24/7 Priority support', '250 Reward Points', 'Supplier Direct Bidding'],
-            featuresAr: ['أولوية عرض الطلبات', 'دعم فني على مدار الساعة', '250 نقطة مكافأة', 'تقديم عروض الموردين المباشرة'],
-            sortOrder: 2,
-          },
-          {
-            planId: 'elite',
-            nameEn: 'Elite Plan',
-            nameAr: 'الباقة النخبة',
-            price: 39.99,
-            currency: 'USD',
-            points: 600,
-            isPopular: false,
-            isActive: true,
-            featuresEn: ['Unlimited request posts', 'Dedicated Account Manager', '600 Reward Points', 'Verified VIP Badge'],
-            featuresAr: ['إضافة طلبات غير محدودة', 'مدير حساب خاص', '600 نقطة مكافأة', 'شارة الحساب الموثوق VIP'],
-            sortOrder: 3,
-          },
-        ];
-        for (const planData of initialPlans) {
-          const plan = this.planRepository.create(planData);
-          await this.planRepository.save(plan);
+      const defaultPointsPlans = [
+        {
+          planId: 'basic',
+          nameEn: '50 Points Package',
+          nameAr: 'باقة 50 نقطة',
+          price: 25,
+          currency: 'LYD',
+          points: 50,
+          isPopular: false,
+          isActive: true,
+          featuresEn: ['50 instant reward points added', 'Enables unlocking 2 store contacts', 'Valid with no expiration date'],
+          featuresAr: ['إضافة 50 نقطة فورية لرصيد المحفظة', 'تتيح فتح بيانات التواصل لمتجرين إضافيين', 'صالحة لجميع الخدمات وبدون تاريخ انتهاء'],
+          sortOrder: 3,
+        },
+        {
+          planId: 'pro',
+          nameEn: '120 Points Package',
+          nameAr: 'باقة 120 نقطة',
+          price: 50,
+          currency: 'LYD',
+          points: 120,
+          isPopular: true,
+          isActive: true,
+          featuresEn: ['120 points added (includes 20 bonus)', 'Enables unlocking 5 store contacts', 'Priority support and store alerts'],
+          featuresAr: ['إضافة 120 نقطة (شاملة 20 نقطة مكافأة)', 'تتيح فتح بيانات التواصل لـ 5 متاجر', 'أولوية الدعم الفني وسرعة الردود'],
+          sortOrder: 4,
+        },
+        {
+          planId: 'elite',
+          nameEn: '300 Points Package',
+          nameAr: 'باقة 300 نقطة',
+          price: 100,
+          currency: 'LYD',
+          points: 300,
+          isPopular: false,
+          isActive: true,
+          featuresEn: ['300 points added (includes 50 bonus)', 'Enables unlocking 12 store contacts', 'Best value for workshops & companies'],
+          featuresAr: ['إضافة 300 نقطة (شاملة 50 نقطة مكافأة)', 'تتيح فتح بيانات التواصل لـ 12 متجراً', 'أفضل توفير وقيمة للورش والمستخدم الدائم'],
+          sortOrder: 5,
+        },
+      ];
+
+      for (const planData of defaultPointsPlans) {
+        const existing = await this.planRepository.findOne({ where: { planId: planData.planId } });
+        if (!existing) {
+          await this.planRepository.save(this.planRepository.create(planData));
+        } else if (existing.currency === 'USD' || !existing.currency || existing.price < 1 || existing.price === 9.99 || existing.price === 19.99 || existing.price === 39.99) {
+          existing.nameAr = planData.nameAr;
+          existing.nameEn = planData.nameEn;
+          existing.price = planData.price;
+          existing.currency = 'LYD';
+          existing.points = planData.points;
+          existing.sortOrder = planData.sortOrder;
+          existing.featuresAr = planData.featuresAr;
+          existing.featuresEn = planData.featuresEn;
+          await this.planRepository.save(existing);
         }
-        this.logger.log('Initial payment plans seeded successfully.');
       }
     } catch (e: any) {
-      this.logger.warn(`Payment plans seed check warning: ${e.message}`);
+      this.logger.warn(`Default plans seed check warning: ${e.message}`);
     }
   }
 
@@ -190,10 +199,37 @@ export class PaymentsService implements OnModuleInit {
   // --- Dynamic Payment Plans Management (Admin & Client) ---
 
   async getActivePlans(): Promise<PaymentPlan[]> {
-    return this.planRepository.find({
+    const plans = await this.planRepository.find({
       where: { isActive: true },
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
     });
+    // Sanitize any legacy records to ensure Libyan Dinar (LYD) currency and clean prices
+    for (const p of plans) {
+      if (p.currency === 'USD' || !p.currency || p.price === 9.99 || p.price === 19.99 || p.price === 39.99) {
+        p.currency = 'LYD';
+        if (p.planId === 'basic') {
+          p.nameAr = 'باقة 50 نقطة';
+          p.nameEn = '50 Points Package';
+          p.price = 25;
+          p.points = 50;
+          p.sortOrder = 3;
+        } else if (p.planId === 'pro') {
+          p.nameAr = 'باقة 120 نقطة';
+          p.nameEn = '120 Points Package';
+          p.price = 50;
+          p.points = 120;
+          p.sortOrder = 4;
+        } else if (p.planId === 'elite') {
+          p.nameAr = 'باقة 300 نقطة';
+          p.nameEn = '300 Points Package';
+          p.price = 100;
+          p.points = 300;
+          p.sortOrder = 5;
+        }
+        await this.planRepository.save(p).catch(() => {});
+      }
+    }
+    return plans.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
 
   async getAllPlansForAdmin(): Promise<PaymentPlan[]> {
