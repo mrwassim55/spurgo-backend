@@ -6,11 +6,13 @@ import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { PaymentPlan } from './entities/payment-plan.entity';
 import { User } from '../users/entities/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PaymentTransaction, PaymentPlan, User]),
     NotificationsModule,
+    UsersModule,
   ],
   providers: [PaymentsService],
   controllers: [PaymentsController],

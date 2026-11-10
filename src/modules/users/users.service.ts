@@ -5,17 +5,21 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, EntityManager } from 'typeorm';
+import { Repository, Like, EntityManager, Not, IsNull, MoreThanOrEqual } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { SystemConfig } from './entities/system-config.entity';
 import { AdminNotification } from './entities/admin-notification.entity';
-import { PointsAction, DEFAULT_SIGNUP_POINTS } from './points.config';
+import { PointsEntry } from './entities/points-entry.entity';
+import { AWARDS, AwardReason, DEFAULT_SETTINGS, SettingKey, Settings } from './rules';
 import {
   AccessoryRequest,
   RequestStatus,
 } from '../requests/entities/accessory-request.entity';
 import { Offer, OfferStatus } from '../offers/entities/offer.entity';
 import { Notification } from '../notifications/entities/notification.entity';
+import { RequestTarget } from '../requests/entities/request-target.entity';
+import { ContactUnlock } from '../offers/entities/contact-unlock.entity';
+import { PaymentTransaction, PaymentStatus } from '../payments/entities/payment-transaction.entity';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -27,12 +31,15 @@ export class UsersService implements OnModuleInit {
     private readonly configRepository: Repository<SystemConfig>,
     @InjectRepository(AdminNotification)
     private readonly adminNotificationsRepository: Repository<AdminNotification>,
+    @InjectRepository(PointsEntry)
+    private readonly pointsRepository: Repository<PointsEntry>,
     private readonly entityManager: EntityManager,
   ) {}
 
   async onModuleInit() {
-    await this.ensureConfig('signupPoints', DEFAULT_SIGNUP_POINTS.toString());
-    await this.ensureConfig('consumptionRate', '25');
+    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+      await this.ensureConfig(key, String(value));
+    }
 
     const migrationKey = 'otp_migration_done';
     const migrationConfig = await this.configRepository.findOne({
@@ -222,119 +229,108 @@ export class UsersService implements OnModuleInit {
     return this.usersRepository.save(user);
   }
 
-  async getPointsConfig(): Promise<{
-    signupPoints: number;
-    consumptionRate: number;
-  }> {
-    const signupPointsEntry = await this.configRepository.findOne({
-      where: { key: 'signupPoints' },
-    });
-    const consumptionRateEntry = await this.configRepository.findOne({
-      where: { key: 'consumptionRate' },
-    });
-
-    return {
-      signupPoints: parseInt(
-        signupPointsEntry?.value || DEFAULT_SIGNUP_POINTS.toString(),
-        10,
-      ),
-      consumptionRate: parseInt(consumptionRateEntry?.value || '25', 10),
-    };
-  }
-
-  async updatePointsConfig(
-    signupPoints: number,
-    consumptionRate: number,
-  ): Promise<any> {
-    if (signupPoints !== undefined && signupPoints !== null) {
-      const signupPointsNum =
-        typeof signupPoints === 'number'
-          ? signupPoints
-          : parseInt(String(signupPoints), 10);
-
-      // 1. Get the current old signup points config value
-      const signupPointsEntry = await this.configRepository.findOne({
-        where: { key: 'signupPoints' },
-      });
-      const oldSignupPoints = signupPointsEntry
-        ? parseInt(signupPointsEntry.value, 10)
-        : DEFAULT_SIGNUP_POINTS;
-
-      // 2. Save the new signup points config
-      await this.configRepository.save({
-        key: 'signupPoints',
-        value: signupPointsNum.toString(),
-      });
-
-      // 3. Update points of all users who haven't spent any points yet (excluding admins)
-      // i.e., user.points === oldSignupPoints OR user.points === DEFAULT_SIGNUP_POINTS
-      // and they have 0 requests and 0 offers
-      if (signupPointsNum !== oldSignupPoints) {
-        const usersToUpdate = await this.usersRepository.find({
-          where: [
-            { points: oldSignupPoints },
-            { points: DEFAULT_SIGNUP_POINTS },
-          ],
-        });
-
-        for (const user of usersToUpdate) {
-          if (user.role !== UserRole.ADMIN) {
-            const requestCount = await this.entityManager
-              .createQueryBuilder()
-              .select('id')
-              .from('accessory_requests', 'req')
-              .where('req.userId = :userId', { userId: user.id })
-              .getCount();
-
-            const offerCount = await this.entityManager
-              .createQueryBuilder()
-              .select('id')
-              .from('offers', 'off')
-              .where('off.supplierId = :supplierId', { supplierId: user.id })
-              .getCount();
-
-            if (requestCount === 0 && offerCount === 0) {
-              user.points = signupPointsNum;
-              await this.usersRepository.save(user);
-            }
-          }
-        }
+  async getSettings(): Promise<Settings> {
+    const rows = await this.configRepository.find();
+    const settings = { ...DEFAULT_SETTINGS };
+    for (const row of rows) {
+      if (row.key in settings && Number.isFinite(Number(row.value))) {
+        settings[row.key as SettingKey] = Number(row.value);
       }
     }
-    if (consumptionRate !== undefined && consumptionRate !== null) {
-      const consumptionRateNum =
-        typeof consumptionRate === 'number'
-          ? consumptionRate
-          : parseInt(String(consumptionRate), 10);
-      await this.configRepository.save({
-        key: 'consumptionRate',
-        value: consumptionRateNum.toString(),
-      });
-    }
-    return this.getPointsConfig();
+    return settings;
   }
 
-  async consumePoints(id: string, action: PointsAction): Promise<User> {
-    const user = await this.findById(id);
-    if (user.role === UserRole.ADMIN || user.role === UserRole.SUPPLIER) {
-      return user;
+  async updateSettings(partial: Record<string, any>): Promise<Settings> {
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (partial?.[key] === undefined || partial[key] === null || partial[key] === '') continue;
+      const value = Number(partial[key]);
+      if (!Number.isFinite(value) || value < 0) {
+        throw new BadRequestException(`${key} must be a non-negative number`);
+      }
+      await this.configRepository.save({ key, value: String(value) });
     }
+    return this.getSettings();
+  }
 
-    const config = await this.getPointsConfig();
-    const cost = config.consumptionRate;
+  // Writes a ledger row and moves the balance. Idempotent per (user, reason, ref) when ref is given.
+  async addLedger(
+    userId: string,
+    amount: number,
+    reason: string,
+    opts: { requestId?: string; ref?: string } = {},
+  ): Promise<PointsEntry | null> {
+    if (!amount) return null;
+    if (opts.ref) {
+      const exists = await this.pointsRepository.findOne({
+        where: { user: { id: userId }, reason, ref: opts.ref },
+      });
+      if (exists) return null;
+    }
+    const entry = await this.pointsRepository.save(
+      this.pointsRepository.create({
+        user: { id: userId } as User,
+        amount,
+        reason,
+        requestId: opts.requestId,
+        ref: opts.ref,
+      }),
+    );
+    await this.usersRepository.increment({ id: userId }, 'points', amount);
+    return entry;
+  }
 
-    if (user.points < cost) {
+  // Awards the points configured for this reason (client doc §8). Same reason+ref is only paid once.
+  async award(
+    userId: string,
+    reason: AwardReason,
+    opts: { requestId?: string; ref?: string } = {},
+  ): Promise<PointsEntry | null> {
+    const settings = await this.getSettings();
+    const amount = settings[AWARDS[reason]];
+    return this.addLedger(userId, amount, reason, {
+      requestId: opts.requestId,
+      ref: opts.ref ?? opts.requestId ?? reason,
+    });
+  }
+
+  // Atomic spend: fails instead of going negative.
+  async spendPoints(
+    userId: string,
+    amount: number,
+    reason: string,
+    opts: { requestId?: string; ref?: string } = {},
+  ): Promise<void> {
+    const result = await this.usersRepository
+      .createQueryBuilder()
+      .update(User)
+      .set({ points: () => `points - ${Math.floor(amount)}` })
+      .where('id = :id AND points >= :amount', { id: userId, amount })
+      .execute();
+    if (!result.affected) {
       throw new BadRequestException('Insufficient points');
     }
+    await this.pointsRepository.save(
+      this.pointsRepository.create({
+        user: { id: userId } as User,
+        amount: -amount,
+        reason,
+        requestId: opts.requestId,
+        ref: opts.ref,
+      }),
+    );
+  }
 
-    user.points -= cost;
-    return this.usersRepository.save(user);
+  async getPointsHistory(userId: string): Promise<PointsEntry[]> {
+    return this.pointsRepository.find({
+      where: { user: { id: userId } },
+      order: { createdAt: 'DESC' },
+      take: 200,
+    });
   }
 
   async addPoints(id: string, amount: number): Promise<User> {
-    const user = await this.findById(id);
-    user.points += amount;
-    return this.usersRepository.save(user);
+    await this.addLedger(id, amount, 'admin');
+    return this.findById(id);
   }
 
   async findAll(): Promise<User[]> {
@@ -347,11 +343,11 @@ export class UsersService implements OnModuleInit {
     const user = await this.findById(id);
     const pointsNum =
       typeof points === 'number' ? points : parseInt(String(points), 10);
-    user.points = pointsNum;
-    return this.usersRepository.save(user);
+    await this.addLedger(id, pointsNum - user.points, 'admin');
+    return this.findById(id);
   }
 
-  async getSystemStats(): Promise<any> {
+  async getSystemStats(rangeDays = 14): Promise<any> {
     const totalUsers = await this.usersRepository.count();
     const customers = await this.usersRepository.count({
       where: { role: 'customer' as any },
@@ -374,14 +370,86 @@ export class UsersService implements OnModuleInit {
       await this.usersRepository.manager.count(AccessoryRequest);
     const totalOffers = await this.usersRepository.manager.count(Offer);
 
+    const manager = this.usersRepository.manager;
+    const countBy = async (entity: any, column: string) =>
+      Object.fromEntries(
+        (
+          await manager
+            .createQueryBuilder(entity, 'e')
+            .select(`e.${column}`, 'k')
+            .addSelect('COUNT(*)', 'n')
+            .groupBy(`e.${column}`)
+            .getRawMany()
+        ).map((r) => [r.k, Number(r.n)]),
+      );
+
+    // ponytail: averaged in JS over the latest 2000 answers; move to SQL if volume grows.
+    const answers = await manager.find(RequestTarget, {
+      where: { respondedAt: Not(IsNull()) },
+      relations: ['request'],
+      order: { respondedAt: 'DESC' },
+      take: 2000,
+    });
+    const firstAnswer = new Map<string, number>();
+    for (const t of answers) {
+      const minutes = (new Date(t.respondedAt!).getTime() - new Date(t.request.createdAt).getTime()) / 60000;
+      const prev = firstAnswer.get(t.request.id);
+      if (prev === undefined || minutes < prev) firstAnswer.set(t.request.id, minutes);
+    }
+    const firstTimes = [...firstAnswer.values()];
+
     return {
       totalUsers,
       customers,
       suppliers,
       admins,
+      agents: await this.usersRepository.count({ where: { role: UserRole.STAFF } }),
       totalPoints,
       totalRequests,
       totalOffers,
+      requestsByStatus: await countBy(AccessoryRequest, 'status'),
+      targetsByStatus: await countBy(RequestTarget, 'status'),
+      unlocksByMethod: await countBy(ContactUnlock, 'via'),
+      ...(await this.timeSeries(rangeDays)),
+      avgFirstResponseMinutes: firstTimes.length
+        ? Math.round(firstTimes.reduce((a, b) => a + b, 0) / firstTimes.length)
+        : null,
+    };
+  }
+
+  // Overview charts: new requests, new users, completed revenue over 14 days (daily),
+  // 90 days (13 weekly buckets) or 365 days (12 ~monthly buckets). Bucket label = its start date (Libya).
+  private async timeSeries(rangeDays: number) {
+    const range = [14, 90, 365].includes(rangeDays) ? rangeDays : 14;
+    const count = range === 14 ? 14 : range === 90 ? 13 : 12;
+    const size = (range / count) * 86_400_000;
+    const end = Date.now();
+    const start = end - count * size;
+    const label = (t: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Tripoli' }).format(new Date(t));
+    const since = new Date(start);
+    const manager = this.usersRepository.manager;
+    const [requests, users, payments] = await Promise.all([
+      manager.find(AccessoryRequest, { where: { createdAt: MoreThanOrEqual(since) }, select: ['id', 'createdAt'] }),
+      this.usersRepository.find({ where: { createdAt: MoreThanOrEqual(since) }, select: ['id', 'createdAt'] }),
+      manager.find(PaymentTransaction, {
+        where: { status: PaymentStatus.COMPLETED, updatedAt: MoreThanOrEqual(since) },
+        select: ['id', 'amount', 'updatedAt'],
+        loadEagerRelations: false,
+      }),
+    ]);
+    const bucket = <T>(rows: T[], date: (r: T) => Date, value: (r: T) => number = () => 1) => {
+      const sums = new Array(count).fill(0);
+      for (const r of rows) {
+        const i = Math.floor((new Date(date(r)).getTime() - start) / size);
+        if (i >= 0 && i < count) sums[i] += value(r);
+      }
+      return sums.map((v, i) => ({ date: label(start + i * size), value: Math.round(v * 100) / 100 }));
+    };
+    return {
+      seriesRange: range,
+      requestsSeries: bucket(requests, (r) => r.createdAt),
+      usersSeries: bucket(users, (u) => u.createdAt),
+      revenueSeries: bucket(payments, (p) => p.updatedAt, (p) => Number(p.amount) || 0),
     };
   }
 
@@ -389,14 +457,17 @@ export class UsersService implements OnModuleInit {
     page: number,
     limit: number,
     search?: string,
+    role?: UserRole,
   ): Promise<{ data: User[]; total: number }> {
-    let where: any = {};
+    const base: any = role ? { role } : {};
+    let where: any = base;
     if (search) {
       const cleanSearch = search.toLowerCase().trim();
       where = [
-        { email: Like(`%${cleanSearch}%`) },
-        { phoneNumber: Like(`%${cleanSearch}%`) },
-        { fullName: Like(`%${cleanSearch}%`) },
+        { ...base, email: Like(`%${cleanSearch}%`) },
+        { ...base, phoneNumber: Like(`%${cleanSearch}%`) },
+        { ...base, fullName: Like(`%${cleanSearch}%`) },
+        { ...base, companyName: Like(`%${cleanSearch}%`) },
       ];
     }
 
@@ -851,6 +922,10 @@ export class UsersService implements OnModuleInit {
     const user = await this.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+    // Rejecting deletes the account: only ever for supplier accounts.
+    if (user.role !== UserRole.SUPPLIER) {
+      throw new BadRequestException('Only supplier accounts can be rejected');
     }
     await this.usersRepository.remove(user);
     return user;

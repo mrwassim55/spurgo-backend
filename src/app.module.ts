@@ -11,6 +11,7 @@ import { UsersModule } from './modules/users/users.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { AiController } from './modules/ai/ai.controller';
 
 @Module({
   imports: [
@@ -73,7 +74,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     ReportsModule,
     PaymentsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, AiController],
   providers: [AppService],
 })
 export class AppModule {}

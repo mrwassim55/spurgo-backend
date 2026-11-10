@@ -12,6 +12,9 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @Controller('notifications')
 @UseGuards(AuthGuard('jwt'))
@@ -21,6 +24,14 @@ export class NotificationsController {
   @Post()
   create(@Body() createNotificationDto: CreateNotificationDto, @Request() req) {
     return this.notificationsService.create(createNotificationDto, req.user.id);
+  }
+
+  // Admin: push a message to every active user of a role (or everyone).
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/broadcast')
+  broadcast(@Body('audience') audience: string, @Body('title') title: string, @Body('message') message: string) {
+    return this.notificationsService.broadcast(audience, title, message);
   }
 
   @Get()

@@ -21,6 +21,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from './entities/user.entity';
+import { isTrialActive } from './rules';
 
 @Controller('users')
 export class UsersController {
@@ -36,8 +37,20 @@ export class UsersController {
       throw new UnauthorizedException('Invalid token payload');
     }
     const user = await this.usersService.findById(req.user.id);
+    const settings = await this.usersService.getSettings();
     const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return {
+      ...userWithoutPassword,
+      trialActiveNow: isTrialActive(user.trialEndsAt, settings),
+      shopOpenHour: settings.shopOpenHour,
+      shopCloseHour: settings.shopCloseHour,
+    };
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get('points/history')
+  async getPointsHistory(@Request() req) {
+    return this.usersService.getPointsHistory(req.user.id);
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -61,23 +74,6 @@ export class UsersController {
     return userWithoutPassword;
   }
 
-  @UseGuards(AuthGuard('jwt'))
-  @Post('points/consume')
-  async consumePoints(@Request() req, @Body('action') action: string) {
-    if (!req.user || !req.user.id) {
-      throw new UnauthorizedException('Invalid token payload');
-    }
-    if (!action) {
-      throw new BadRequestException('Action is required');
-    }
-    const user = await this.usersService.consumePoints(
-      req.user.id,
-      action as any,
-    );
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
-  }
-
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Post('points/add')
@@ -94,12 +90,13 @@ export class UsersController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Get('admin/users')
   async getAllUsers(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('search') search?: string,
+    @Query('role') role?: UserRole,
   ) {
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
@@ -107,6 +104,7 @@ export class UsersController {
       pageNum,
       limitNum,
       search,
+      role,
     );
     return {
       total,
@@ -122,25 +120,22 @@ export class UsersController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('admin/stats')
-  async getStats() {
-    return this.usersService.getSystemStats();
+  async getStats(@Query('days') days?: string) {
+    return this.usersService.getSystemStats(parseInt(days ?? '14', 10));
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('admin/points-config')
   async getPointsConfig() {
-    return this.usersService.getPointsConfig();
+    return this.usersService.getSettings();
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Post('admin/points-config')
-  async updatePointsConfig(
-    @Body('signupPoints') signupPoints: number,
-    @Body('consumptionRate') consumptionRate: number,
-  ) {
-    return this.usersService.updatePointsConfig(signupPoints, consumptionRate);
+  async updatePointsConfig(@Body() body: Record<string, any>) {
+    return this.usersService.updateSettings(body);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -153,6 +148,13 @@ export class UsersController {
     const user = await this.usersService.updatePoints(id, points);
     const { password, ...userWithoutPassword } = user;
     return userWithoutPassword;
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  @Get('admin/users/:id/points-history')
+  async getUserPointsHistory(@Param('id') id: string) {
+    return this.usersService.getPointsHistory(id);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)

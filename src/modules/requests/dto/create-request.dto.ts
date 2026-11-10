@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsBoolean, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsInt, Min } from 'class-validator';
 
 export class CreateRequestDto {
   @IsNotEmpty()
@@ -60,4 +60,13 @@ export class CreateRequestDto {
   @IsOptional()
   @IsString()
   phoneNumber?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  quantity?: number;
+
+  @IsOptional()
+  @IsString()
+  partNumber?: string;
 }

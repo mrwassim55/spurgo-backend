@@ -15,6 +15,7 @@ import {
 import { PaymentPlan } from './entities/payment-plan.entity';
 import { User } from '../users/entities/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class PaymentsService implements OnModuleInit {
@@ -29,10 +30,79 @@ export class PaymentsService implements OnModuleInit {
     private readonly userRepository: Repository<User>,
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService,
+    private readonly usersService: UsersService,
   ) {}
 
   async onModuleInit() {
     await this.seedDefaultPlansIfNeeded();
+    await this.seedSearchPlansIfMissing();
+    if (process.env.NODE_ENV === 'production' && !this.payNetToken) {
+      this.logger.warn('PAY_NET_BEARER_TOKEN is not set: payment webhooks are trusted without verification!');
+    }
+  }
+
+  // Normal / smart search (client doc §2). The difference must be clear to the user before payment.
+  private async seedSearchPlansIfMissing() {
+    const plans = [
+      {
+        planId: 'search_normal',
+        nameEn: 'Normal search',
+        nameAr: 'البحث العادي',
+        price: 10,
+        sortOrder: 10,
+        featuresEn: [
+          'Unlock the store details of one offer',
+          'Search direct marketplace listings',
+          'Suitable for common and readily available parts',
+        ],
+        featuresAr: [
+          'إظهار بيانات المتجر والتواصل المباشر لعرض واحد',
+          'البحث في العروض المباشرة والمخزون المتاح',
+          'مناسب للقطع الشائعة والمتوفرة بكثرة',
+        ],
+      },
+      {
+        planId: 'search_smart',
+        nameEn: 'Smart search',
+        nameAr: 'البحث الذكي',
+        price: 20,
+        sortOrder: 11,
+        featuresEn: [
+          'Unlock the store details of one offer',
+          'Advanced compatibility matching across store network',
+          'Priority store alerts and fast response',
+          'Ideal for rare or specific parts',
+        ],
+        featuresAr: [
+          'إظهار بيانات المتجر والتواصل المباشر لعرض واحد',
+          'مطابقة ذكية متقدمة مع شبكة المتاجر وتدقيق التوافق',
+          'أولوية إرسال وتنبيه المتاجر وسرعة الردود',
+          'مناسب للقطع النادرة التي تتطلب دقة عالية',
+        ],
+      },
+    ];
+    try {
+      for (const plan of plans) {
+        const existing = await this.planRepository.findOne({ where: { planId: plan.planId } });
+        if (!existing) {
+          await this.planRepository.save(
+            this.planRepository.create({ ...plan, currency: 'LYD', points: 0, isPopular: false, isActive: true }),
+          );
+        } else if (
+          existing.featuresAr?.some((f: string) => f.includes('التفاصيل تحدد لاحقاً')) ||
+          (existing.featuresAr && existing.featuresAr.length <= 1)
+        ) {
+          existing.featuresAr = plan.featuresAr;
+          existing.featuresEn = plan.featuresEn;
+          existing.nameAr = plan.nameAr;
+          existing.nameEn = plan.nameEn;
+          existing.price = plan.price;
+          await this.planRepository.save(existing);
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`Search plans seed warning: ${e.message}`);
+    }
   }
 
   private async seedDefaultPlansIfNeeded() {
@@ -164,40 +234,21 @@ export class PaymentsService implements OnModuleInit {
 
   // --- Initiate Payment with Dynamic Plan Lookup ---
 
-  async initiatePayment(
-    userId: string,
-    planId: string,
-    customAmountLYD?: number,
-    customPoints?: number,
-  ): Promise<any> {
+  async initiatePayment(userId: string, planId: string): Promise<any> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    let points: number;
-    let amountLYD: number;
-    let planNameEn: string;
-    let planNameAr: string;
-
-    // Look up plan dynamically from DB first
     const dbPlan = await this.planRepository.findOne({
       where: { planId: planId?.toLowerCase() },
     });
 
-    if (dbPlan) {
-      points = dbPlan.points;
-      amountLYD = dbPlan.price;
-      planNameEn = dbPlan.nameEn;
-      planNameAr = dbPlan.nameAr;
-    } else if (customAmountLYD && customAmountLYD > 0 && customPoints && customPoints > 0) {
-      points = customPoints;
-      amountLYD = customAmountLYD;
-      planNameEn = `${points} Points Package`;
-      planNameAr = `باقة ${points} نقطة`;
-    } else {
+    // Price and points always come from the DB plan; client-sent amounts are ignored (they were tamperable).
+    if (!dbPlan || !dbPlan.isActive) {
       throw new BadRequestException(`Plan '${planId}' not found`);
     }
+    const { points, price: amountLYD, nameEn: planNameEn, nameAr: planNameAr } = dbPlan;
 
     const timestamp = Date.now();
     const randomHex = Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -209,7 +260,7 @@ export class PaymentsService implements OnModuleInit {
       user,
       amount: amountLYD,
       pointsCredited: points,
-      planId: planId || 'custom',
+      planId: dbPlan.planId,
       status: PaymentStatus.PENDING,
     });
     await this.transactionRepository.save(transaction);
@@ -304,7 +355,8 @@ export class PaymentsService implements OnModuleInit {
     transaction.gatewayRef = body.our_ref || body.reference || body.gateway_ref;
 
     if (isSuccess) {
-      await this.verifyAndCompleteTransaction(transaction);
+      const completed = await this.verifyAndCompleteTransaction(transaction);
+      if (!completed) return { status: 'unverified', customRef };
     } else {
       transaction.status = PaymentStatus.FAILED;
       await this.transactionRepository.save(transaction);
@@ -313,36 +365,33 @@ export class PaymentsService implements OnModuleInit {
     return { status: 'processed', customRef, transactionStatus: transaction.status };
   }
 
-  async verifyAndCompleteTransaction(transaction: PaymentTransaction): Promise<void> {
-    try {
-      if (this.payNetToken) {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.payNetToken}`,
-        };
-        const verifyRes = await fetch(
-          `${this.payNetApiUrl}/receipt/transaction`,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              store_id: this.payNetStoreId,
-              custom_ref: transaction.customRef,
-            }),
+  // Returns false (transaction stays PENDING) when Pay.net does not confirm the payment.
+  async verifyAndCompleteTransaction(transaction: PaymentTransaction): Promise<boolean> {
+    if (this.payNetToken) {
+      let verified = false;
+      try {
+        const verifyRes = await fetch(`${this.payNetApiUrl}/receipt/transaction`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.payNetToken}`,
           },
-        );
+          body: JSON.stringify({
+            store_id: this.payNetStoreId,
+            custom_ref: transaction.customRef,
+          }),
+        });
         const verifyData: any = verifyRes.ok ? await verifyRes.json() : null;
-
-        if (verifyData?.result !== 'success') {
-          this.logger.warn(
-            `Verification check for ${transaction.customRef} returned incomplete status`,
-          );
-        }
+        verified = verifyData?.result === 'success';
+      } catch (e: any) {
+        this.logger.warn(`Verification API error for ${transaction.customRef}: ${e.message}`);
       }
-    } catch (e: any) {
-      this.logger.warn(
-        `Verification check API error (non-fatal, proceeding with transaction completion): ${e.message}`,
-      );
+      if (!verified) {
+        // Paid data is unlocked by this credit, so an unverified webhook must not complete it.
+        this.logger.warn(`Payment ${transaction.customRef} not confirmed by Pay.net, left PENDING`);
+        await this.transactionRepository.save(transaction);
+        return false;
+      }
     }
 
     transaction.status = PaymentStatus.COMPLETED;
@@ -350,21 +399,60 @@ export class PaymentsService implements OnModuleInit {
 
     const user = transaction.user;
     if (user) {
-      user.points = (user.points || 0) + transaction.pointsCredited;
-      await this.userRepository.save(user);
+      const ref = transaction.customRef;
+      if (transaction.pointsCredited > 0) {
+        await this.usersService.addLedger(user.id, transaction.pointsCredited, 'purchase', { ref });
+      }
+      await this.usersService.award(user.id, 'paid', { ref }); // "10 points after a paid subscription"
 
       await this.notificationsService.sendSystemNotification(
         user.id,
-        'Payment Successful! Points Credited',
-        `Your payment of ${transaction.amount} LYD was successful. ${transaction.pointsCredited} bonus points have been added to your account!`,
+        'Payment Successful!',
+        `Your payment of ${transaction.amount} LYD was successful.`,
         'PAYMENT_SUCCESS',
-        { customRef: transaction.customRef, points: transaction.pointsCredited },
+        { customRef: ref, points: String(transaction.pointsCredited), planId: transaction.planId },
       );
 
-      this.logger.log(
-        `Successfully credited ${transaction.pointsCredited} points to user ${user.email} (ref: ${transaction.customRef})`,
-      );
+      this.logger.log(`Completed payment ${ref} for user ${user.email}`);
     }
+    return true;
+  }
+
+  async getTransactionsForAdmin(status: string | undefined, page: number, limit: number) {
+    const where = status ? { status: status as PaymentStatus } : {};
+    const [rows, total] = await this.transactionRepository.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: Math.min(limit, 100),
+    });
+    const all = await this.transactionRepository.find({ select: ['status', 'amount'] as any, loadEagerRelations: false });
+    const summary = { revenue: 0, completed: 0, pending: 0, failed: 0 };
+    for (const t of all) {
+      if (t.status === PaymentStatus.COMPLETED) {
+        summary.completed++;
+        summary.revenue += Number(t.amount) || 0;
+      } else if (t.status === PaymentStatus.PENDING) summary.pending++;
+      else summary.failed++;
+    }
+    summary.revenue = Math.round(summary.revenue * 100) / 100;
+    return {
+      total,
+      page,
+      summary,
+      data: rows.map((t) => ({
+        id: t.id,
+        customRef: t.customRef,
+        amount: t.amount,
+        planId: t.planId,
+        pointsCredited: t.pointsCredited,
+        status: t.status,
+        paymentMethod: t.paymentMethod,
+        usedAt: t.usedAt,
+        createdAt: t.createdAt,
+        user: t.user ? { id: t.user.id, fullName: t.user.fullName, email: t.user.email, phoneNumber: t.user.phoneNumber } : null,
+      })),
+    };
   }
 
   async getTransactionStatus(customRef: string, userId: string): Promise<any> {
@@ -386,6 +474,7 @@ export class PaymentsService implements OnModuleInit {
       status: transaction.status,
       amount: transaction.amount,
       pointsCredited: transaction.pointsCredited,
+      planId: transaction.planId,
       paymentMethod: transaction.paymentMethod,
       updatedAt: transaction.updatedAt,
     };

@@ -68,6 +68,16 @@ export class AccessoryRequest {
   @Column({ nullable: true })
   phoneNumber?: string;
 
+  @Column({ type: 'int', default: 1 })
+  quantity: number;
+
+  @Column({ nullable: true })
+  partNumber?: string;
+
+  // Offers are accepted (and stores nudged) until this time.
+  @Column({ nullable: true })
+  offersDeadline?: Date;
+
   @Column({
     type: 'simple-enum',
     enum: RequestStatus,

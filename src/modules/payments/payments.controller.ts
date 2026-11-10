@@ -54,15 +54,17 @@ export class PaymentsController {
     return this.paymentsService.deletePlan(id);
   }
 
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/transactions')
+  async getTransactions(@Query('status') status?: string, @Query('page') page = '1', @Query('limit') limit = '20') {
+    return this.paymentsService.getTransactionsForAdmin(status, parseInt(page, 10) || 1, parseInt(limit, 10) || 20);
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Post('initiate')
-  async initiatePayment(
-    @Request() req: any,
-    @Body('planId') planId: string,
-    @Body('amountLYD') amountLYD?: number,
-    @Body('points') points?: number,
-  ) {
-    return this.paymentsService.initiatePayment(req.user.id, planId, amountLYD, points);
+  async initiatePayment(@Request() req: any, @Body('planId') planId: string) {
+    return this.paymentsService.initiatePayment(req.user.id, planId);
   }
 
   @Post('webhook')

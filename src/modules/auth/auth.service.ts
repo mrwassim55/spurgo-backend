@@ -16,6 +16,10 @@ import { AdminNotification } from '../users/entities/admin-notification.entity';
 import { EmailVerification } from '../users/entities/email-verification.entity';
 import { MailService } from './mail.service';
 import { SmsService } from './sms.service';
+import { UsersService } from '../users/users.service';
+
+const pick = (o: any, keys: string[]) =>
+  Object.fromEntries(keys.filter((k) => o?.[k] !== undefined).map((k) => [k, o[k]]));
 
 @Injectable()
 export class AuthService implements OnApplicationBootstrap {
@@ -33,6 +37,7 @@ export class AuthService implements OnApplicationBootstrap {
     private jwtService: JwtService,
     private mailService: MailService,
     private smsService: SmsService,
+    private usersService: UsersService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -95,21 +100,16 @@ export class AuthService implements OnApplicationBootstrap {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Load signup points config
-    const signupPointsEntry = await this.configRepository.findOne({
-      where: { key: 'signupPoints' },
-    });
-    const signupPoints = parseInt(signupPointsEntry?.value || '100', 10);
-
     // Prepare user creation payload (we store it instead of writing to users table)
     const pendingUserPayload = {
       email: normalizedEmail,
       password: hashedPassword,
       fullName,
       phoneNumber,
-      role: role || UserRole.CUSTOMER,
-      points: signupPoints,
-      ...extra,
+      // Whitelist: the body must never set id/role/points/approval flags.
+      ...pick(extra, ['whatsapp', 'region', 'city', 'address', 'companyName', 'companyLogo', 'taxId', 'specializations', 'avatar']),
+      role: role === UserRole.SUPPLIER ? UserRole.SUPPLIER : UserRole.CUSTOMER,
+      points: 0, // signup points are awarded through the ledger on verification
     };
 
     // Generate 6-digit OTP
@@ -285,7 +285,13 @@ export class AuthService implements OnApplicationBootstrap {
       verificationStatus: isSupplier ? 'pending' : 'approved',
       verificationDocuments: [],
     }) as unknown as User;
+    if (!isSupplier) {
+      const { trialHours } = await this.usersService.getSettings();
+      user.trialEndsAt = new Date(Date.now() + trialHours * 3600_000);
+    }
     const savedUser = await this.usersRepository.save(user);
+    await this.usersService.award(savedUser.id, 'signup');
+    savedUser.points = (await this.usersService.findById(savedUser.id)).points;
 
     // Clean up verification record
     await this.emailVerificationRepository.delete({ email: normalizedEmail });

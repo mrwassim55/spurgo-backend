@@ -34,7 +34,7 @@ export class Offer {
   price: number;
 
   @Column()
-  condition: string; // New, Used, Refurbished
+  condition: string; // New | Used | Alternative (legacy: Refurbished)
 
   @Column()
   deliveryTime: string; // e.g. 1-2 days
@@ -93,6 +93,19 @@ export class Offer {
 
   @Column({ type: 'boolean', default: false })
   inStore: boolean;
+
+  // Sale confirmed through Spurgo, then rating (client doc §8).
+  @Column({ nullable: true })
+  completedAt?: Date;
+
+  @Column({ nullable: true })
+  ratingRequestedAt?: Date;
+
+  @Column({ type: 'int', nullable: true })
+  rating?: number; // 1..5
+
+  @Column({ type: 'text', nullable: true })
+  ratingComment?: string;
 
   @CreateDateColumn()
   createdAt: Date;

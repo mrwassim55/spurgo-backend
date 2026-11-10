@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { UsersService } from '../users/users.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { User, UserRole } from '../users/entities/user.entity';
@@ -92,6 +93,14 @@ describe('AuthService - OTP Email Verification', () => {
         { provide: MailService, useValue: mockMailService },
         { provide: SmsService, useValue: mockSmsService },
         { provide: JwtService, useValue: mockJwtService },
+        {
+          provide: UsersService,
+          useValue: {
+            getSettings: jest.fn().mockResolvedValue({ trialHours: 4 }),
+            award: jest.fn(),
+            findById: jest.fn().mockResolvedValue({ points: 10 }),
+          },
+        },
       ],
     }).compile();
 

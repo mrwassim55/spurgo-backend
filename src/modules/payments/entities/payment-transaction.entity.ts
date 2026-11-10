@@ -52,6 +52,13 @@ export class PaymentTransaction {
   @Column({ type: 'json', nullable: true })
   rawWebhookPayload: any;
 
+  // Paid searches (search_*) are credits: consumed by one offer unlock.
+  @Column({ nullable: true })
+  usedAt?: Date;
+
+  @Column({ nullable: true })
+  usedForOfferId?: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

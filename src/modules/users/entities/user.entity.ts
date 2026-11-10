@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 
 export enum UserRole {
   CUSTOMER = 'customer',
@@ -22,6 +23,7 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  @Exclude()
   @Column()
   password: string;
 
@@ -70,8 +72,12 @@ export class User {
   @Column({ nullable: true })
   address: string;
 
-  @Column({ default: 50 })
-  points: number;
+  @Column({ default: 0 })
+  points: number; // balance; movements live in points_entries
+
+  // Free trial end (customers). Only usable during shop hours, see rules.isTrialActive.
+  @Column({ nullable: true })
+  trialEndsAt?: Date; // Date-typed so TypeORM picks datetime (sqlite) / timestamp (postgres)
 
   @Column({ default: true })
   isActive: boolean;

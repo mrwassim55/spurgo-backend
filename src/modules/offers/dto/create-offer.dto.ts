@@ -85,4 +85,9 @@ export class CreateOfferDto {
   @IsOptional()
   @IsString()
   phoneNumber?: string;
+
+  // Agent (staff) only: offer on behalf of this store.
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
 }

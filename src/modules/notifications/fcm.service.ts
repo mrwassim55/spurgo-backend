@@ -90,14 +90,14 @@ export class FcmService implements OnModuleInit {
         android: {
           priority: 'high',
           notification: {
-            sound: 'default',
+            sound: 'shopify_chaching',
             channelId: 'high_importance_channel',
           },
         },
         apns: {
           payload: {
             aps: {
-              sound: 'default',
+              sound: 'shopify_chaching.wav',
               contentAvailable: true,
             },
           },

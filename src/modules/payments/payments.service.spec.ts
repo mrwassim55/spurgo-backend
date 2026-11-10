@@ -6,6 +6,7 @@ import { PaymentTransaction, PaymentStatus } from './entities/payment-transactio
 import { PaymentPlan } from './entities/payment-plan.entity';
 import { User } from '../users/entities/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;
@@ -13,6 +14,7 @@ describe('PaymentsService', () => {
   let planRepoMock: any;
   let userRepoMock: any;
   let notificationsServiceMock: any;
+  let usersServiceMock: any;
 
   beforeEach(async () => {
     transactionRepoMock = {
@@ -57,6 +59,8 @@ describe('PaymentsService', () => {
       save: jest.fn().mockImplementation(async (user) => user),
     };
 
+    usersServiceMock = { addLedger: jest.fn(), award: jest.fn() };
+
     notificationsServiceMock = {
       sendSystemNotification: jest.fn().mockResolvedValue({}),
     };
@@ -80,6 +84,7 @@ describe('PaymentsService', () => {
           provide: NotificationsService,
           useValue: notificationsServiceMock,
         },
+        { provide: UsersService, useValue: usersServiceMock },
         {
           provide: ConfigService,
           useValue: {
@@ -146,8 +151,27 @@ describe('PaymentsService', () => {
       const result = await service.handleWebhook(webhookPayload);
 
       expect(result.status).toBe('processed');
-      expect(mockUser.points).toBe(350);
+      expect(mockTx.status).toBe(PaymentStatus.COMPLETED);
+      expect(usersServiceMock.addLedger).toHaveBeenCalledWith('u-1', 250, 'purchase', { ref: 'PAY-12345-ABC' });
+      expect(usersServiceMock.award).toHaveBeenCalledWith('u-1', 'paid', { ref: 'PAY-12345-ABC' });
       expect(notificationsServiceMock.sendSystemNotification).toHaveBeenCalled();
+    });
+
+    it('should leave the transaction PENDING when Pay.net does not confirm it', async () => {
+      (service as any).configService.get = (key: string) =>
+        key === 'PAY_NET_BEARER_TOKEN' ? 'secret' : null;
+      const fetchSpy = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue({ ok: true, json: async () => ({ result: 'failed' }) } as any);
+      const mockTx = { customRef: 'PAY-FAKE', status: PaymentStatus.PENDING, pointsCredited: 999, user: { id: 'u-1' } };
+      transactionRepoMock.findOne.mockResolvedValue(mockTx);
+
+      const result = await service.handleWebhook({ custom_ref: 'PAY-FAKE', result: 'success' });
+
+      expect(result.status).toBe('unverified');
+      expect(mockTx.status).toBe(PaymentStatus.PENDING);
+      expect(usersServiceMock.addLedger).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
     });
   });
 });

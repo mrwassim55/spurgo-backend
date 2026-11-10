@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,7 +12,8 @@ import {
   NotificationStatus,
 } from './entities/notification.entity';
 import { CreateNotificationDto } from './dto/create-notification.dto';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
+import { ContactUnlock } from '../offers/entities/contact-unlock.entity';
 import {
   AccessoryRequest,
   RequestStatus,
@@ -30,6 +33,8 @@ export class NotificationsService {
     private readonly requestsRepository: Repository<AccessoryRequest>,
     @InjectRepository(Offer)
     private readonly offersRepository: Repository<Offer>,
+    @InjectRepository(ContactUnlock)
+    private readonly unlocksRepository: Repository<ContactUnlock>,
     private readonly fcmService: FcmService,
   ) {}
 
@@ -54,6 +59,16 @@ export class NotificationsService {
 
     if (!sender || !receiver) {
       throw new NotFoundException('Sender or Receiver not found.');
+    }
+
+    // Paywall (client doc §3): a customer can only reach a store they unlocked.
+    if (sender.role === UserRole.CUSTOMER && receiver.role === UserRole.SUPPLIER) {
+      if (!(await this.hasUnlockedStore(senderId, receiverId))) {
+        throw new HttpException(
+          { statusCode: HttpStatus.PAYMENT_REQUIRED, message: 'PAYMENT_REQUIRED' },
+          HttpStatus.PAYMENT_REQUIRED,
+        );
+      }
     }
 
     // Check if duplicate match request already exists
@@ -104,17 +119,39 @@ export class NotificationsService {
     return saved;
   }
 
-  async findAll(userId: string, type?: string): Promise<Notification[]> {
-    if (type === 'all') {
-      return this.notificationsRepository.find({
-        where: [{ receiver: { id: userId } }, { sender: { id: userId } }],
-        order: { createdAt: 'DESC' },
-      });
-    }
-    return this.notificationsRepository.find({
-      where: { receiver: { id: userId } },
+  private async hasUnlockedStore(customerId: string, storeId: string): Promise<boolean> {
+    const count = await this.unlocksRepository.count({
+      where: { user: { id: customerId }, offer: { supplier: { id: storeId } } },
+    });
+    return count > 0;
+  }
+
+  async findAll(userId: string, type?: string) {
+    const list = await this.notificationsRepository.find({
+      where:
+        type === 'all'
+          ? [{ receiver: { id: userId } }, { sender: { id: userId } }]
+          : { receiver: { id: userId } },
       order: { createdAt: 'DESC' },
     });
+    const viewer = await this.usersRepository.findOne({ where: { id: userId } });
+    if (viewer?.role !== UserRole.CUSTOMER) return list;
+
+    // Customers only see a store's identity once the store accepted the match or they unlocked it.
+    const unlockedStores = new Set(
+      (
+        await this.unlocksRepository.find({
+          where: { user: { id: userId } },
+          relations: ['offer', 'offer.supplier'],
+        })
+      ).map((u) => u.offer?.supplier?.id),
+    );
+    const hide = (u: User | null, n: Notification) =>
+      u && u.id !== userId && u.role === UserRole.SUPPLIER &&
+      n.status !== NotificationStatus.ACCEPTED && !unlockedStores.has(u.id)
+        ? { id: u.id, role: u.role, city: u.city, locked: true }
+        : u;
+    return list.map((n) => ({ ...n, sender: hide(n.sender, n), receiver: hide(n.receiver, n) }));
   }
 
   async acceptMatch(id: string, userId: string): Promise<Notification> {
@@ -199,6 +236,24 @@ export class NotificationsService {
 
     notification.status = NotificationStatus.DECLINED;
     return this.notificationsRepository.save(notification);
+  }
+
+  async broadcast(audience: string, title: string, message: string): Promise<{ sent: number }> {
+    if (!title?.trim() || !message?.trim()) throw new BadRequestException('title and message are required');
+    const roles = ['customer', 'supplier', 'staff'];
+    if (audience !== 'all' && !roles.includes(audience)) {
+      throw new BadRequestException('audience must be all, customer, supplier or staff');
+    }
+    const users = await this.usersRepository.find({
+      where: audience === 'all'
+        ? roles.map((role) => ({ role: role as UserRole, isActive: true }))
+        : { role: audience as UserRole, isActive: true },
+    });
+    // ponytail: sequential sends; batch with FCM sendEach if audiences grow to thousands.
+    for (const u of users) {
+      await this.sendSystemNotification(u.id, title.trim(), message.trim(), 'broadcast');
+    }
+    return { sent: users.length };
   }
 
   async sendSystemNotification(

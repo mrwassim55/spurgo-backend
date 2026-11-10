@@ -19,6 +19,11 @@ import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { UsersService } from '../users/users.service';
+import { SmsService } from './sms.service';
+import type { WhatsappSettingsInput } from './sms.service';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @Controller('auth')
 export class AuthController {
@@ -26,7 +31,30 @@ export class AuthController {
     private authService: AuthService,
     private cloudinaryService: CloudinaryService,
     private usersService: UsersService,
+    private smsService: SmsService,
   ) {}
+
+  // ---- Admin: WhatsApp Cloud API connection (OTP delivery) ----
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/whatsapp')
+  getWhatsappSettings() {
+    return this.smsService.getWhatsappSettingsView();
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/whatsapp')
+  saveWhatsappSettings(@Body() body: WhatsappSettingsInput) {
+    return this.smsService.saveWhatsappSettings(body);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/whatsapp/test')
+  testWhatsapp(@Body('phoneNumber') phoneNumber: string) {
+    return this.smsService.sendWhatsappTest(phoneNumber);
+  }
 
   @Post('register')
   async register(@Body() registrationData: any) {
@@ -100,7 +128,8 @@ export class AuthController {
     return userWithoutPassword;
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Get('admin/pending-suppliers')
   async getPendingSuppliers() {
     const suppliers = await this.usersService.getPendingSuppliers();
@@ -110,19 +139,22 @@ export class AuthController {
     });
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Get('pending-suppliers')
   async getPendingSuppliersAlias() {
     return this.getPendingSuppliers();
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Patch('admin/approve-supplier/:id')
   async approveSupplierPatch(@Param('id') id: string) {
     return this.approveSupplierPost(id);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Post('admin/approve-supplier/:id')
   async approveSupplierPost(@Param('id') id: string) {
     const user = await this.usersService.approveSupplier(id);
@@ -130,13 +162,15 @@ export class AuthController {
     return userWithoutPassword;
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Patch('admin/reject-supplier/:id')
   async rejectSupplierPatch(@Param('id') id: string) {
     return this.rejectSupplierPost(id);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
   @Post('admin/reject-supplier/:id')
   async rejectSupplierPost(@Param('id') id: string) {
     const user = await this.usersService.rejectSupplier(id);
