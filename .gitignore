@@ -8,3 +8,4 @@ cloudflared*
 firebase-service-account*.json
 uploads/*
 !uploads/.gitkeep
+!uploads/spurgo.apk
