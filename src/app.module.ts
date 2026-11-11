@@ -11,6 +11,7 @@ import { UsersModule } from './modules/users/users.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PopupsModule } from './modules/popups/popups.module';
 import { AiController } from './modules/ai/ai.controller';
 
 @Module({
@@ -73,6 +74,7 @@ import { AiController } from './modules/ai/ai.controller';
     NotificationsModule,
     ReportsModule,
     PaymentsModule,
+    PopupsModule,
   ],
   controllers: [AppController, AiController],
   providers: [AppService],
