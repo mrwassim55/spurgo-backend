@@ -11,6 +11,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { PopupsService } from './popups.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -33,42 +34,42 @@ export class PopupsController {
   }
 
   // Admin Management Endpoints
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('admin')
   findAllAdmin() {
     return this.popupsService.findAllAdmin();
   }
 
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('admin/:id')
   findOneAdmin(@Param('id') id: string) {
     return this.popupsService.findOne(id);
   }
 
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Post('admin')
   createAdmin(@Body() body: any) {
     return this.popupsService.create(body);
   }
 
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Put('admin/:id')
   updateAdmin(@Param('id') id: string, @Body() body: any) {
     return this.popupsService.update(id, body);
   }
 
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Delete('admin/:id')
   deleteAdmin(@Param('id') id: string) {
     return this.popupsService.delete(id);
   }
 
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Patch('admin/:id/toggle')
   toggleAdmin(@Param('id') id: string) {
