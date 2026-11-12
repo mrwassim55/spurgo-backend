@@ -608,7 +608,7 @@ export class UsersService implements OnModuleInit {
   }
 
   async createAdminCreatedUser(data: any): Promise<User> {
-    const { email, password, fullName, role } = data;
+    const { email, password, fullName, role, address, city, phoneNumber } = data;
     const normalizedEmail = email ? email.toLowerCase().trim() : '';
 
     const existingUser = await this.usersRepository.findOne({
@@ -624,6 +624,9 @@ export class UsersService implements OnModuleInit {
       password: hashedPassword,
       fullName,
       role,
+      address: address || null,
+      city: city || null,
+      phoneNumber: phoneNumber || null,
       points: 50, // default points
       isEmailVerified: true,
       isApproved: true,
