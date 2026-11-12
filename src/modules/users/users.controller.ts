@@ -206,6 +206,22 @@ export class UsersController {
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
+  @Post('admin/users/:id/plan')
+  async updateUserPlan(
+    @Param('id') id: string,
+    @Body('planId') planId: string,
+    @Body('status') status?: string,
+  ) {
+    if (!planId) {
+      throw new BadRequestException('Plan ID is required');
+    }
+    const user = await this.usersService.updateUserPlan(id, planId, status);
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword;
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Delete('admin/matches/:id')
   async deleteMatch(@Param('id') id: string) {
     await this.usersService.deleteMatch(id);

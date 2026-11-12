@@ -301,6 +301,12 @@ export class PaymentsService implements OnModuleInit {
     });
     await this.transactionRepository.save(transaction);
 
+    if (user && (!user.activePlan || user.activePlan === 'free')) {
+      user.activePlan = dbPlan.planId;
+      user.activePlanStatus = PaymentStatus.PENDING;
+      await this.userRepository.save(user).catch(() => {});
+    }
+
     // Call Pay.net.ly Initiate Payment API
     const webhookUrl = `${this.appBackendUrl}/payments/webhook`;
     const redirectUrl = `${this.appBackendUrl}/payments/redirect?customRef=${customRef}`;
@@ -435,6 +441,9 @@ export class PaymentsService implements OnModuleInit {
 
     const user = transaction.user;
     if (user) {
+      user.activePlan = transaction.planId;
+      user.activePlanStatus = PaymentStatus.COMPLETED;
+      await this.userRepository.save(user).catch(() => {});
       const ref = transaction.customRef;
       if (transaction.pointsCredited > 0) {
         await this.usersService.addLedger(user.id, transaction.pointsCredited, 'purchase', { ref });

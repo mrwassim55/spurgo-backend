@@ -79,6 +79,12 @@ export class User {
   @Column({ nullable: true })
   trialEndsAt?: Date; // Date-typed so TypeORM picks datetime (sqlite) / timestamp (postgres)
 
+  @Column({ nullable: true })
+  activePlan?: string;
+
+  @Column({ nullable: true })
+  activePlanStatus?: string;
+
   @Column({ default: true })
   isActive: boolean;
 

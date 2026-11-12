@@ -41,6 +41,19 @@ export class UsersService implements OnModuleInit {
       await this.ensureConfig(key, String(value));
     }
 
+    try {
+      await this.usersRepository.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "activePlan" varchar; ALTER TABLE users ADD COLUMN IF NOT EXISTS "activePlanStatus" varchar;`
+      );
+    } catch {
+      try {
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN activePlan varchar;`);
+      } catch {}
+      try {
+        await this.usersRepository.query(`ALTER TABLE users ADD COLUMN activePlanStatus varchar;`);
+      } catch {}
+    }
+
     const migrationKey = 'otp_migration_done';
     const migrationConfig = await this.configRepository.findOne({
       where: { key: migrationKey },
@@ -477,7 +490,79 @@ export class UsersService implements OnModuleInit {
       skip: (page - 1) * limit,
       take: limit,
     });
-    return { data, total };
+
+    // Lookup latest payment / booking transactions for each user
+    const userIds = data.map((u) => u.id).filter(Boolean);
+    const txMap = new Map<string, PaymentTransaction>();
+    if (userIds.length > 0) {
+      try {
+        const txs = await this.entityManager
+          .createQueryBuilder(PaymentTransaction, 'tx')
+          .innerJoinAndSelect('tx.user', 'user')
+          .where('user.id IN (:...userIds)', { userIds })
+          .orderBy('tx.createdAt', 'DESC')
+          .getMany();
+
+        for (const tx of txs) {
+          const uid = tx.user?.id;
+          if (!uid) continue;
+          const current = txMap.get(uid);
+          if (!current) {
+            txMap.set(uid, tx);
+          } else if (current.status !== PaymentStatus.COMPLETED && tx.status === PaymentStatus.COMPLETED) {
+            txMap.set(uid, tx);
+          }
+        }
+      } catch {
+        // Fall back gracefully if table or join fails
+      }
+    }
+
+    const planNamesAr: Record<string, string> = {
+      elite: 'باقة 300 نقطة (النخبة)',
+      pro: 'باقة 120 نقطة (الاحترافية)',
+      basic: 'باقة 50 نقطة (الأساسية)',
+      search_smart: 'البحث الذكي',
+      search_normal: 'البحث العادي',
+      free: 'باقة مجانية',
+    };
+
+    const enriched = data.map((u) => {
+      const tx = txMap.get(u.id);
+      let planId = u.activePlan || tx?.planId;
+      if (!planId) {
+        if (u.role === UserRole.ADMIN || u.role === UserRole.STAFF || u.role === UserRole.MODERATOR) {
+          planId = 'pro';
+        } else {
+          planId = 'free';
+        }
+      }
+
+      let planStatus = u.activePlanStatus || tx?.status;
+      if (!planStatus) {
+        planStatus = planId === 'free' ? 'free' : 'COMPLETED';
+      }
+
+      const planNameAr = planNamesAr[planId] || planId;
+
+      return {
+        ...u,
+        activePlan: planId,
+        activePlanName: planNameAr,
+        activePlanStatus: planStatus,
+        activePlanAmount: tx?.amount ?? null,
+        activePlanDate: tx?.createdAt ?? null,
+      };
+    });
+
+    return { data: enriched as any, total };
+  }
+
+  async updateUserPlan(id: string, planId: string, status?: string): Promise<User> {
+    const user = await this.findById(id);
+    user.activePlan = planId;
+    user.activePlanStatus = status || 'COMPLETED';
+    return this.usersRepository.save(user);
   }
 
   async updateRole(id: string, role: UserRole): Promise<User> {
