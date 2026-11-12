@@ -5,6 +5,6 @@ export class SystemConfig {
   @PrimaryColumn()
   key: string;
 
-  @Column()
+  @Column({ type: 'text' })
   value: string;
 }

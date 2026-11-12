@@ -6,6 +6,8 @@ import { AdminNotification } from './entities/admin-notification.entity';
 import { PointsEntry } from './entities/points-entry.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { LegalService } from './legal.service';
+import { LegalController } from './legal.controller';
 
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
@@ -14,8 +16,8 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
     TypeOrmModule.forFeature([User, SystemConfig, AdminNotification, PointsEntry]),
     CloudinaryModule,
   ],
-  providers: [UsersService],
-  controllers: [UsersController],
-  exports: [UsersService],
+  providers: [UsersService, LegalService],
+  controllers: [UsersController, LegalController],
+  exports: [UsersService, LegalService],
 })
 export class UsersModule {}
