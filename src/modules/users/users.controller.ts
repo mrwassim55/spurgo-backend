@@ -138,6 +138,35 @@ export class UsersController {
     return this.usersService.updateSettings(body);
   }
 
+  @Get('admin/custom-texts/public')
+  async getPublicCustomTexts(@Query('lang') lang?: string) {
+    return this.usersService.getCustomTexts(lang || 'ar');
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/custom-texts')
+  async getCustomTexts(@Query('lang') lang?: string) {
+    return this.usersService.getCustomTexts(lang || 'ar');
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/custom-texts')
+  async updateCustomTexts(
+    @Body('texts') texts: Record<string, any>,
+    @Query('lang') lang?: string,
+  ) {
+    return this.usersService.updateCustomTexts(texts, lang || 'ar');
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/custom-texts/reset')
+  async resetCustomTexts(@Query('lang') lang?: string) {
+    return this.usersService.resetCustomTexts(lang || 'ar');
+  }
+
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.MODERATOR)
   @Post('admin/users/:id/points')

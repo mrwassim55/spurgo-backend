@@ -265,6 +265,42 @@ export class UsersService implements OnModuleInit {
     return this.getSettings();
   }
 
+  async getCustomTexts(lang = 'ar'): Promise<Record<string, Record<string, string>>> {
+    const row = await this.configRepository.findOne({ where: { key: `admin.custom_texts.${lang}` } });
+    if (!row || !row.value) return {};
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      return {};
+    }
+  }
+
+  async updateCustomTexts(texts: Record<string, any>, lang = 'ar'): Promise<{ success: boolean; count: number; updatedAt: string }> {
+    const now = new Date().toISOString();
+    await this.configRepository.save({
+      key: `admin.custom_texts.${lang}`,
+      value: JSON.stringify(texts || {}),
+    });
+    await this.configRepository.save({
+      key: `admin.custom_texts.${lang}.updatedAt`,
+      value: now,
+    });
+    return {
+      success: true,
+      count: Object.keys(texts || {}).length,
+      updatedAt: now,
+    };
+  }
+
+  async resetCustomTexts(lang = 'ar'): Promise<{ success: boolean; message: string }> {
+    await this.configRepository.delete({ key: `admin.custom_texts.${lang}` });
+    await this.configRepository.delete({ key: `admin.custom_texts.${lang}.updatedAt` });
+    return {
+      success: true,
+      message: 'تمت استعادة كافة النصوص الافتراضية بنجاح.',
+    };
+  }
+
   // Writes a ledger row and moves the balance. Idempotent per (user, reason, ref) when ref is given.
   async addLedger(
     userId: string,
