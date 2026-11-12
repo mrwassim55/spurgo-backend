@@ -7,7 +7,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, IsNull, Like, Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Offer, OfferStatus } from './entities/offer.entity';
@@ -227,8 +227,11 @@ export class OffersService {
 
     if (decision === 'payment_required') {
       const plans = await this.plansRepository.find({
-        where: { planId: In(SEARCH_PLANS), isActive: true },
-        order: { sortOrder: 'ASC' },
+        where: [
+          { planId: In(SEARCH_PLANS), isActive: true },
+          { planId: Like('search_%'), isActive: true },
+        ],
+        order: { sortOrder: 'ASC', createdAt: 'ASC' },
       });
       throw new HttpException(
         {

@@ -90,15 +90,23 @@ export class PaymentsService implements OnModuleInit {
             this.planRepository.create({ ...plan, currency: 'LYD', points: 0, isPopular: plan.isPopular ?? false, isActive: true }),
           );
         } else {
-          existing.featuresAr = plan.featuresAr;
-          existing.featuresEn = plan.featuresEn;
-          existing.nameAr = plan.nameAr;
-          existing.nameEn = plan.nameEn;
-          existing.price = plan.price;
-          existing.currency = 'LYD';
-          existing.sortOrder = plan.sortOrder;
-          existing.isPopular = plan.isPopular ?? false;
-          await this.planRepository.save(existing);
+          // Never overwrite admin-customized names, prices, or features if already present
+          let updated = false;
+          if (!existing.currency || existing.currency === 'USD') {
+            existing.currency = 'LYD';
+            updated = true;
+          }
+          if (!existing.featuresAr || existing.featuresAr.length === 0) {
+            existing.featuresAr = plan.featuresAr;
+            updated = true;
+          }
+          if (!existing.featuresEn || existing.featuresEn.length === 0) {
+            existing.featuresEn = plan.featuresEn;
+            updated = true;
+          }
+          if (updated) {
+            await this.planRepository.save(existing);
+          }
         }
       }
     } catch (e: any) {
@@ -228,6 +236,8 @@ export class PaymentsService implements OnModuleInit {
         }
         await this.planRepository.save(p).catch(() => {});
       }
+      if (!Array.isArray(p.featuresAr)) p.featuresAr = p.featuresAr ? [p.featuresAr] : [];
+      if (!Array.isArray(p.featuresEn)) p.featuresEn = p.featuresEn ? [p.featuresEn] : [];
     }
     return plans.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
