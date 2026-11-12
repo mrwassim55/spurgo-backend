@@ -33,3 +33,4 @@ export class LegalController {
     return this.legalService.updateLegal(body);
   }
 }
+
