@@ -10,13 +10,15 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN rm -rf dist *.tsbuildinfo && npm run build
 
 # Prune devDependencies to reduce image size
 RUN npm prune --production
 
 # Stage 2: Production
 FROM node:20-alpine AS runner
+
+RUN apk add --no-cache libstdc++
 
 WORKDIR /app
 
@@ -30,4 +32,4 @@ ENV PORT=3000
 ENV NODE_ENV=production
 EXPOSE 3000
 
-CMD ["sh", "-c", "if [ -f dist/src/main.js ]; then node dist/src/main.js; else node dist/main.js; fi"]
+CMD ["sh", "-c", "if [ -f dist/src/main.js ]; then node dist/src/main.js; elif [ -f dist/main.js ]; then node dist/main.js; else echo 'Fatal: main.js not found in dist!' && ls -la dist && exit 1; fi"]

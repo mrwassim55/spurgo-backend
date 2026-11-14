@@ -55,11 +55,9 @@ import { AiController } from './modules/ai/ai.controller';
           };
         }
 
-        if (process.env.NODE_ENV === 'production') {
-          throw new Error(
-            'FATAL: DATABASE_URL environment variable is required in production mode.',
-          );
-        }
+        console.warn(
+          '[DATABASE] No Postgres DATABASE_URL or DB_* credentials found. Falling back to SQLite database.',
+        );
         return {
           type: 'sqlite',
           database: process.env.DATABASE_PATH || 'spurgo.db',
