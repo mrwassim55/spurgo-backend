@@ -214,5 +214,79 @@ describe('PaymentsService', () => {
       expect(mockTx.paymentMethod).toBe('edfaly');
       expect(usersServiceMock.addLedger).toHaveBeenCalledWith('u-1', 50, 'purchase', { ref: 'PAY-EDFALY-001' });
     });
+
+    it('should render hosted Edfaly checkout HTML with test credentials and order amount', async () => {
+      const mockUser = { id: 'u-1', email: 'user@spurgo.com', phoneNumber: '091-1234567' };
+      const mockTx = {
+        id: 'tx-3',
+        customRef: 'PAY-EDFALY-HTML',
+        status: PaymentStatus.PENDING,
+        amount: 50.0,
+        pointsCredited: 120,
+        planId: 'pro',
+        user: mockUser,
+      };
+
+      transactionRepoMock.findOne.mockResolvedValue(mockTx);
+
+      const html = await service.renderEdfalyHostedPage('PAY-EDFALY-HTML');
+
+      expect(html).toContain('إدفع لي');
+      expect(html).toContain('091-1234567');
+      expect(html).toContain('666666');
+      expect(html).toContain('6666');
+      expect(html).toContain('50.00');
+      expect(html).toContain('PAY-EDFALY-HTML');
+    });
+
+    it('should process hosted Edfaly form with test card and complete transaction', async () => {
+      const mockUser = { id: 'u-1', email: 'user@spurgo.com', points: 0 };
+      const mockTx = {
+        id: 'tx-4',
+        customRef: 'PAY-EDFALY-FORM',
+        status: PaymentStatus.PENDING,
+        amount: 100.0,
+        pointsCredited: 300,
+        planId: 'elite',
+        user: mockUser,
+      };
+
+      transactionRepoMock.findOne.mockResolvedValue(mockTx);
+
+      const responseHtml = await service.processEdfalyForm({
+        customRef: 'PAY-EDFALY-FORM',
+        phone: '091-1234567',
+        identityCard: '666666',
+        otp: '6666',
+      });
+
+      expect(responseHtml).toContain('تم الدفع بنجاح');
+      expect(responseHtml).toContain('spurgo://payment-result');
+      expect(mockTx.status).toBe(PaymentStatus.COMPLETED);
+      expect(mockTx.paymentMethod).toBe('edfaly');
+      expect(usersServiceMock.addLedger).toHaveBeenCalledWith('u-1', 300, 'purchase', { ref: 'PAY-EDFALY-FORM' });
+    });
+
+    it('should be idempotent and not double-credit if verified twice', async () => {
+      const mockUser = { id: 'u-1', email: 'user@spurgo.com', points: 300 };
+      const mockTx = {
+        id: 'tx-5',
+        customRef: 'PAY-EDFALY-DUP',
+        status: PaymentStatus.COMPLETED,
+        amount: 25.0,
+        pointsCredited: 50,
+        planId: 'basic',
+        user: mockUser,
+      };
+
+      transactionRepoMock.findOne.mockResolvedValue(mockTx);
+      usersServiceMock.addLedger.mockClear();
+
+      const result = await service.verifyTransaction('PAY-EDFALY-DUP', 'u-1');
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe(PaymentStatus.COMPLETED);
+      expect(usersServiceMock.addLedger).not.toHaveBeenCalled();
+    });
   });
 });
