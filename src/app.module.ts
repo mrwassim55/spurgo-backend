@@ -13,6 +13,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PopupsModule } from './modules/popups/popups.module';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module';
+import { CategoriesModule } from './modules/categories/categories.module';
 import { AiController } from './modules/ai/ai.controller';
 
 @Module({
@@ -77,6 +78,7 @@ import { AiController } from './modules/ai/ai.controller';
     PaymentsModule,
     PopupsModule,
     MarketplaceModule,
+    CategoriesModule,
   ],
   controllers: [AppController, AiController],
   providers: [AppService],

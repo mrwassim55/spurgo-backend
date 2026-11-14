@@ -4,6 +4,7 @@ import { Repository, Like, FindOptionsWhere, ILike } from 'typeorm';
 import { MarketplaceItem } from './entities/marketplace-item.entity';
 import { MarketplaceInquiry } from './entities/marketplace-inquiry.entity';
 import { CreateMarketplaceItemDto, UpdateMarketplaceItemDto, CreateInquiryDto } from './dto/marketplace.dto';
+import { CategoriesService } from '../categories/categories.service';
 
 @Injectable()
 export class MarketplaceService implements OnModuleInit {
@@ -14,6 +15,7 @@ export class MarketplaceService implements OnModuleInit {
     private readonly itemRepo: Repository<MarketplaceItem>,
     @InjectRepository(MarketplaceInquiry)
     private readonly inquiryRepo: Repository<MarketplaceInquiry>,
+    private readonly categoriesService: CategoriesService,
   ) {}
 
   async onModuleInit() {
@@ -193,16 +195,7 @@ export class MarketplaceService implements OnModuleInit {
   }
 
   async getCategories() {
-    return [
-      'قطع المحرك',
-      'نظام المكابح',
-      'نظام التعليق والمساعدات',
-      'الهيكل الخارجي والإنارة',
-      'نظام الكهرباء والإلكترونيات',
-      'فلاتر وزيوت وسوائل',
-      'نظام التبريد والتكييف',
-      'كماليات وإكسسوارات',
-    ];
+    return this.categoriesService.findAll('marketplace');
   }
 
   async getMakes() {

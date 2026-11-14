@@ -82,3 +82,4 @@ export class MarketplaceItem {
   @UpdateDateColumn()
   updatedAt: Date;
 }
+

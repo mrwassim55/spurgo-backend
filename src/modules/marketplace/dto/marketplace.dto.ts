@@ -51,3 +51,4 @@ export class CreateInquiryDto {
   city?: string;
   notes?: string;
 }
+

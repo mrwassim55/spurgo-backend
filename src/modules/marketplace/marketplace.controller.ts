@@ -115,3 +115,4 @@ export class MarketplaceController {
     return this.marketplaceService.updateInquiryStatus(id, status);
   }
 }
+

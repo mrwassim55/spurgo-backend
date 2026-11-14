@@ -41,3 +41,4 @@ export class MarketplaceInquiry {
   @CreateDateColumn()
   createdAt: Date;
 }
+
