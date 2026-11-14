@@ -234,6 +234,8 @@ export class MarketplaceService implements OnModuleInit {
           description: 'طقم تيل فرامل أمامي أصلي وكالة مصنوع من السيراميك عالي الأداء، يوفر قوة كبح ممتازة وبدون أصوات أو غبار زائد، متوافق تماماً مع تويوتا كامري وأفالون 2018-2024.',
           images: [
             'https://images.unsplash.com/photo-1486006920555-c77dce18193b?auto=format&fit=crop&w=800&q=80',
+            'https://images.unsplash.com/photo-1600793575654-910699b5e4d4?auto=format&fit=crop&w=800&q=80',
+            'https://images.unsplash.com/photo-1555353540-64580b51c258?auto=format&fit=crop&w=800&q=80',
           ],
           city: 'طرابلس',
           contactPhone: '+218910000001',

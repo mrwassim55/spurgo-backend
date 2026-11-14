@@ -70,3 +70,4 @@ export class CategoriesController {
     return this.categoriesService.findOne(id);
   }
 }
+

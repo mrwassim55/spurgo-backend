@@ -61,3 +61,4 @@ export class UpdateCategoryDto {
   @IsOptional()
   isActive?: boolean;
 }
+
