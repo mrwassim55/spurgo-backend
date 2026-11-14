@@ -120,6 +120,20 @@ describe('PaymentsService', () => {
       expect(transactionRepoMock.save).toHaveBeenCalled();
     });
 
+    it('should initiate Edfaly payment with custom test phone and test credentials', async () => {
+      const mockUser = { id: 'u-1', email: 'user@spurgo.com', phoneNumber: '+218912345678', language: 'ar' };
+      userRepoMock.findOne.mockResolvedValue(mockUser);
+
+      const result = await service.initiatePayment('u-1', 'pro', '091-1234567', 'edfaly');
+
+      expect(result.success).toBe(true);
+      expect(result.paymentMethod).toBe('edfaly');
+      expect(result.testCredentials.phone).toBe('091-1234567');
+      expect(result.testCredentials.identityCard).toBe('666666');
+      expect(result.testCredentials.otp).toBe('6666');
+      expect(result.checkoutUrl).toContain('payments/edfaly/checkout');
+    });
+
     it('should throw BadRequestException if plan is invalid', async () => {
       userRepoMock.findOne.mockResolvedValue({ id: 'u-1' });
 
@@ -172,6 +186,33 @@ describe('PaymentsService', () => {
       expect(mockTx.status).toBe(PaymentStatus.PENDING);
       expect(usersServiceMock.addLedger).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
+    });
+
+    it('should complete Edfaly transaction with test credentials', async () => {
+      const mockUser = { id: 'u-1', email: 'user@spurgo.com', points: 100 };
+      const mockTx = {
+        id: 'tx-2',
+        customRef: 'PAY-EDFALY-001',
+        status: PaymentStatus.PENDING,
+        amount: 25.0,
+        pointsCredited: 50,
+        planId: 'basic',
+        user: mockUser,
+      };
+
+      transactionRepoMock.findOne.mockResolvedValue(mockTx);
+
+      const result = await service.verifyTransaction('PAY-EDFALY-001', 'u-1', {
+        otp: '6666',
+        identityCard: '666666',
+        phone: '091-1234567',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe(PaymentStatus.COMPLETED);
+      expect(mockTx.status).toBe(PaymentStatus.COMPLETED);
+      expect(mockTx.paymentMethod).toBe('edfaly');
+      expect(usersServiceMock.addLedger).toHaveBeenCalledWith('u-1', 50, 'purchase', { ref: 'PAY-EDFALY-001' });
     });
   });
 });

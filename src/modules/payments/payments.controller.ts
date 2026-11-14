@@ -63,13 +63,48 @@ export class PaymentsController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post('initiate')
-  async initiatePayment(@Request() req: any, @Body('planId') planId: string) {
-    return this.paymentsService.initiatePayment(req.user.id, planId);
+  async initiatePayment(
+    @Request() req: any,
+    @Body('planId') planId: string,
+    @Body('phone') phone?: string,
+    @Body('paymentMethod') paymentMethod?: string,
+  ) {
+    return this.paymentsService.initiatePayment(req.user.id, planId, phone, paymentMethod);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('verify/:customRef')
+  async verifyPayment(
+    @Request() req: any,
+    @Param('customRef') customRef: string,
+    @Body() body?: { otp?: string; identityCard?: string; phone?: string },
+  ) {
+    return this.paymentsService.verifyTransaction(customRef, req.user.id, body);
   }
 
   @Post('webhook')
   async handleWebhook(@Body() body: any) {
     return this.paymentsService.handleWebhook(body);
+  }
+
+  @Post('tlync/webhook')
+  async handleTlyncWebhook(@Body() body: any) {
+    return this.paymentsService.handleWebhook(body);
+  }
+
+  @Get('edfaly/checkout/:customRef')
+  @Header('Content-Type', 'text/html')
+  async renderEdfalyCheckout(
+    @Param('customRef') customRef: string,
+    @Query('phone') phone?: string,
+  ) {
+    return this.paymentsService.renderEdfalyHostedPage(customRef, phone);
+  }
+
+  @Post('edfaly/process')
+  @Header('Content-Type', 'text/html')
+  async processEdfalyForm(@Body() body: any) {
+    return this.paymentsService.processEdfalyForm(body);
   }
 
   @Get('redirect')
