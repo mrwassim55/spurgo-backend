@@ -103,6 +103,13 @@ export class MarketplaceController {
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  @Post('admin/items/:id/notify')
+  async notifyItem(@Param('id') id: string) {
+    return this.marketplaceService.notifyProduct(id);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
   @Get('admin/inquiries')
   async getInquiries(@Query('status') status?: string) {
     return this.marketplaceService.getInquiries(status);

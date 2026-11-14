@@ -5,6 +5,7 @@ import { MarketplaceItem } from './entities/marketplace-item.entity';
 import { MarketplaceInquiry } from './entities/marketplace-inquiry.entity';
 import { CreateMarketplaceItemDto, UpdateMarketplaceItemDto, CreateInquiryDto } from './dto/marketplace.dto';
 import { CategoriesService } from '../categories/categories.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MarketplaceService implements OnModuleInit {
@@ -16,6 +17,7 @@ export class MarketplaceService implements OnModuleInit {
     @InjectRepository(MarketplaceInquiry)
     private readonly inquiryRepo: Repository<MarketplaceInquiry>,
     private readonly categoriesService: CategoriesService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -114,7 +116,26 @@ export class MarketplaceService implements OnModuleInit {
       isFeatured: dto.isFeatured || false,
       images: Array.isArray(dto.images) ? dto.images : [],
     });
-    return this.itemRepo.save(item);
+    const saved = await this.itemRepo.save(item);
+
+    // Automatically notify all users via FCM topic, push & in-app database records
+    try {
+      await this.notificationsService.notifyNewMarketplaceProduct(saved);
+      this.logger.log(`Dispatched new product notification for item: ${saved.id} (${saved.titleAr})`);
+    } catch (err) {
+      this.logger.error('Error dispatching product notification:', err);
+    }
+
+    return saved;
+  }
+
+  async notifyProduct(id: string) {
+    const item = await this.itemRepo.findOne({ where: { id } });
+    if (!item) {
+      throw new NotFoundException(`Marketplace item with id ${id} not found`);
+    }
+    await this.notificationsService.notifyNewMarketplaceProduct(item);
+    return { success: true, message: 'Notification broadcasted successfully to all users' };
   }
 
   async update(id: string, dto: UpdateMarketplaceItemDto) {

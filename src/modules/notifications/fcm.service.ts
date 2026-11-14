@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getMessaging, Message } from 'firebase-admin/messaging';
+import { getMessaging, Message, MulticastMessage } from 'firebase-admin/messaging';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -110,6 +110,110 @@ export class FcmService implements OnModuleInit {
     } catch (error) {
       this.logger.error(`❌ FCM Push failed for token ${fcmToken}:`, error);
       return false;
+    }
+  }
+
+  async sendTopicPushNotification(
+    topic: string,
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ): Promise<boolean> {
+    if (!this.isInitialized) {
+      this.logger.log(
+        `[FCM Mock Topic Push] Topic: "${topic}" | Title: "${title}" | Body: "${body}"`,
+      );
+      return false;
+    }
+
+    try {
+      const message: Message = {
+        topic,
+        notification: {
+          title,
+          body,
+        },
+        data: data || {},
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'shopify_chaching',
+            channelId: 'high_importance_channel',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'shopify_chaching.wav',
+              contentAvailable: true,
+            },
+          },
+        },
+      };
+
+      const response = await getMessaging().send(message);
+      this.logger.log(`✅ FCM Topic Push Sent successfully! Topic: ${topic}, Message ID: ${response}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`❌ FCM Topic Push failed for topic ${topic}:`, error);
+      return false;
+    }
+  }
+
+  async sendMulticastPushNotification(
+    tokens: string[],
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ): Promise<{ successCount: number; failureCount: number }> {
+    const validTokens = (tokens || []).filter((t) => t && t.trim() !== '');
+    if (validTokens.length === 0) {
+      return { successCount: 0, failureCount: 0 };
+    }
+
+    if (!this.isInitialized) {
+      this.logger.log(
+        `[FCM Mock Multicast] ${validTokens.length} devices | Title: "${title}" | Body: "${body}"`,
+      );
+      return { successCount: validTokens.length, failureCount: 0 };
+    }
+
+    try {
+      const message: MulticastMessage = {
+        tokens: validTokens,
+        notification: {
+          title,
+          body,
+        },
+        data: data || {},
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'shopify_chaching',
+            channelId: 'high_importance_channel',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'shopify_chaching.wav',
+              contentAvailable: true,
+            },
+          },
+        },
+      };
+
+      const response = await getMessaging().sendEachForMulticast(message);
+      this.logger.log(
+        `✅ FCM Multicast Sent! Success: ${response.successCount}, Failures: ${response.failureCount}`,
+      );
+      return {
+        successCount: response.successCount,
+        failureCount: response.failureCount,
+      };
+    } catch (error) {
+      this.logger.error('❌ FCM Multicast failed:', error);
+      return { successCount: 0, failureCount: validTokens.length };
     }
   }
 }

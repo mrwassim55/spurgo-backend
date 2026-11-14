@@ -287,4 +287,84 @@ export class NotificationsService {
     }
     return saved;
   }
+
+  async notifyNewMarketplaceProduct(item: {
+    id: string;
+    titleAr?: string;
+    titleEn?: string;
+    make?: string;
+    model?: string;
+    price?: number;
+    currency?: string;
+    images?: string[];
+  }): Promise<void> {
+    const title = '🔥 قطعة غيار جديدة متوفرة بالسوق!';
+    const itemTitle = item.titleAr || item.titleEn || 'قطعة غيار مميزة';
+    const carInfo = [item.make, item.model].filter((x) => x && x !== 'الكل').join(' ');
+    const body = `${itemTitle}${carInfo ? ` (${carInfo})` : ''} بسعر ${item.price ?? 0} ${item.currency || 'د.ل'} متوفرة الآن في سوق سبورجو`;
+
+    const dataPayload: Record<string, string> = {
+      type: 'marketplace_product',
+      itemId: String(item.id),
+      title: itemTitle,
+      price: String(item.price ?? 0),
+      image: Array.isArray(item.images) && item.images.length > 0 ? item.images[0] : '',
+      make: item.make || '',
+      model: item.model || '',
+    };
+
+    // 1. Topic Push: Broadcast to all subscribed devices
+    try {
+      await this.fcmService.sendTopicPushNotification(
+        'marketplace_products',
+        title,
+        body,
+        dataPayload,
+      );
+      await this.fcmService.sendTopicPushNotification(
+        'all_users',
+        title,
+        body,
+        dataPayload,
+      );
+    } catch (err) {
+      console.error('Failed to send topic push notification:', err);
+    }
+
+    // 2. Multicast directly to all active users with registered tokens
+    try {
+      const activeUsers = await this.usersRepository.find({
+        where: { isActive: true },
+        select: ['id', 'fcmToken', 'fullName'],
+      });
+
+      const tokens = activeUsers
+        .map((u) => u.fcmToken)
+        .filter((t): t is string => !!t && t.trim().length > 0);
+
+      if (tokens.length > 0) {
+        await this.fcmService.sendMulticastPushNotification(
+          tokens,
+          title,
+          body,
+          dataPayload,
+        );
+      }
+
+      // 3. Save notification record for users in the database
+      for (const u of activeUsers) {
+        try {
+          const dbNotif = this.notificationsRepository.create({
+            sender: u,
+            receiver: u,
+            message: `${title}: ${body}`,
+            status: NotificationStatus.ACCEPTED,
+          });
+          await this.notificationsRepository.save(dbNotif);
+        } catch (_) {}
+      }
+    } catch (err) {
+      console.error('Failed to dispatch user notifications for new product:', err);
+    }
+  }
 }
