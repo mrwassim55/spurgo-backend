@@ -56,6 +56,33 @@ export class AuthController {
     return this.smsService.sendWhatsappTest(phoneNumber);
   }
 
+  // ---- Admin / Test: Al-Masafa SMS Gateway V2 (OTP Delivery) ----
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/masafa')
+  getMasafaSettings() {
+    return this.smsService.getMasafaSettingsView();
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/masafa')
+  saveMasafaSettings(@Body() body: any) {
+    return this.smsService.saveMasafaSettings(body);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/masafa/test')
+  testMasafaAdmin(@Body('phoneNumber') phoneNumber: string, @Body('code') code?: string) {
+    return this.smsService.sendMasafaTest(phoneNumber, code);
+  }
+
+  @Post('test-sms-otp')
+  testSmsOtp(@Body('phoneNumber') phoneNumber: string, @Body('code') code?: string) {
+    return this.smsService.sendMasafaTest(phoneNumber, code);
+  }
+
   @Post('register')
   async register(@Body() registrationData: any) {
     return this.authService.register(registrationData);
